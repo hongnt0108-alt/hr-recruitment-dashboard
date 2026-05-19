@@ -7,7 +7,7 @@ import streamlit as st
 # STYLE
 # =========================
 
-def inject_css():
+def inject_css() -> None:
     st.markdown(
         """
         <style>
@@ -50,7 +50,7 @@ def inject_css():
         }
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
@@ -58,8 +58,24 @@ def inject_css():
 # HELPER FUNCTIONS
 # =========================
 
-def prepare_attrition_flag(df):
+def has_required_columns(df: pd.DataFrame, columns: list[str]) -> bool:
+    missing_columns = [col for col in columns if col not in df.columns]
+
+    if missing_columns:
+        st.warning(
+            "Thiếu cột dữ liệu: "
+            + ", ".join(f"`{col}`" for col in missing_columns)
+        )
+        return False
+
+    return True
+
+
+def prepare_attrition_flag(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+
+    if "Attrition" not in df.columns:
+        raise ValueError("Không tìm thấy cột 'Attrition' trong dữ liệu.")
 
     if df["Attrition"].dtype == "object":
         df["AttritionFlag"] = (
@@ -67,30 +83,46 @@ def prepare_attrition_flag(df):
             .astype(str)
             .str.strip()
             .str.lower()
-            .map({
-                "yes": 1,
-                "no": 0,
-                "1": 1,
-                "0": 0
-            })
+            .map(
+                {
+                    "yes": 1,
+                    "no": 0,
+                    "1": 1,
+                    "0": 0,
+                }
+            )
         )
     else:
         df["AttritionFlag"] = df["Attrition"]
 
+    df["AttritionFlag"] = df["AttritionFlag"].fillna(0).astype(int)
+
     return df
 
 
-def calculate_attrition_rate(df, group_col):
+def calculate_attrition_rate(df: pd.DataFrame, group_col: str) -> pd.DataFrame:
+    if group_col not in df.columns:
+        return pd.DataFrame(
+            columns=[
+                group_col,
+                "TotalEmployees",
+                "AttritionEmployees",
+                "AttritionRate",
+            ]
+        )
+
     df = prepare_attrition_flag(df)
 
     result = (
-        df
-        .groupby(group_col, as_index=False, observed=False)
+        df.groupby(group_col, as_index=False, observed=False)
         .agg(
             TotalEmployees=("AttritionFlag", "count"),
-            AttritionEmployees=("AttritionFlag", "sum")
+            AttritionEmployees=("AttritionFlag", "sum"),
         )
     )
+
+    if result.empty:
+        return result
 
     result["AttritionRate"] = (
         result["AttritionEmployees"]
@@ -100,37 +132,111 @@ def calculate_attrition_rate(df, group_col):
 
     result = result.sort_values(
         by="AttritionRate",
-        ascending=False
+        ascending=False,
     )
 
     return result
 
 
-def get_attrition_group(rate):
+def get_attrition_group(rate: float) -> str:
     if rate < 10:
         return "Low"
-    elif rate < 20:
+    if rate < 20:
         return "Medium"
-    else:
-        return "High"
+    return "High"
 
 
-def get_bar_colors(chart_df):
+def get_bar_colors(chart_df: pd.DataFrame) -> pd.Series:
     color_map = {
         "Low": "#A8DADC",
         "Medium": "#F4A261",
-        "High": "#E63946"
+        "High": "#E63946",
     }
 
     groups = chart_df["AttritionRate"].apply(get_attrition_group)
+
     return groups.map(color_map)
 
 
-def show_attrition_bar(df, group_col, title, height=420):
+def create_age_group(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "Age" not in df.columns:
+        return df
+
+    df["AgeGroup"] = pd.cut(
+        df["Age"],
+        bins=[0, 25, 35, 45, 55, 100],
+        labels=[
+            "Under 25",
+            "25-34",
+            "35-44",
+            "45-54",
+            "55+",
+        ],
+    )
+
+    return df
+
+
+def create_income_group(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "MonthlyIncome" not in df.columns:
+        return df
+
+    try:
+        df["IncomeGroup"] = pd.qcut(
+            df["MonthlyIncome"],
+            q=4,
+            labels=[
+                "Low Income",
+                "Mid-Low Income",
+                "Mid-High Income",
+                "High Income",
+            ],
+            duplicates="drop",
+        )
+    except ValueError:
+        df["IncomeGroup"] = "Unknown"
+
+    return df
+
+
+def create_years_company_group(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    if "YearsAtCompany" not in df.columns:
+        return df
+
+    df["YearsAtCompanyGroup"] = pd.cut(
+        df["YearsAtCompany"],
+        bins=[-1, 1, 5, 10, 100],
+        labels=[
+            "0-1 years",
+            "2-5 years",
+            "6-10 years",
+            "10+ years",
+        ],
+    )
+
+    return df
+
+
+# =========================
+# CHART FUNCTIONS
+# =========================
+
+def show_attrition_bar(
+    df: pd.DataFrame,
+    group_col: str,
+    title: str,
+    height: int = 420,
+) -> pd.DataFrame:
     chart_df = calculate_attrition_rate(df, group_col)
 
     if chart_df.empty:
-        st.warning("Không có dữ liệu phù hợp để hiển thị biểu đồ này.")
+        st.warning(f"Không có dữ liệu phù hợp để hiển thị biểu đồ `{title}`.")
         return chart_df
 
     fig = px.bar(
@@ -140,19 +246,19 @@ def show_attrition_bar(df, group_col, title, height=420):
         text=chart_df["AttritionRate"].round(2),
         hover_data=[
             "TotalEmployees",
-            "AttritionEmployees"
+            "AttritionEmployees",
         ],
         title=title,
         category_orders={
-            group_col: chart_df[group_col].astype(str).tolist()
-        }
+            group_col: chart_df[group_col].astype(str).tolist(),
+        },
     )
 
     fig.update_traces(
         texttemplate="%{text:.2f}%",
         textposition="outside",
         marker_color=get_bar_colors(chart_df),
-        width=0.55
+        width=0.55,
     )
 
     y_max = chart_df["AttritionRate"].max()
@@ -167,7 +273,7 @@ def show_attrition_bar(df, group_col, title, height=420):
         uniformtext_minsize=8,
         uniformtext_mode="hide",
         showlegend=False,
-        margin=dict(l=30, r=30, t=70, b=80)
+        margin=dict(l=30, r=30, t=70, b=80),
     )
 
     st.plotly_chart(fig, width="stretch")
@@ -175,7 +281,16 @@ def show_attrition_bar(df, group_col, title, height=420):
     return chart_df
 
 
-def show_count_bar(df, group_col, title, height=420):
+def show_count_bar(
+    df: pd.DataFrame,
+    group_col: str,
+    title: str,
+    height: int = 420,
+) -> pd.DataFrame:
+    if group_col not in df.columns:
+        st.warning(f"Không tìm thấy cột `{group_col}` để hiển thị biểu đồ.")
+        return pd.DataFrame()
+
     chart_df = (
         df[group_col]
         .value_counts()
@@ -184,18 +299,22 @@ def show_count_bar(df, group_col, title, height=420):
 
     chart_df.columns = [group_col, "Count"]
 
+    if chart_df.empty:
+        st.warning(f"Không có dữ liệu phù hợp để hiển thị biểu đồ `{title}`.")
+        return chart_df
+
     fig = px.bar(
         chart_df,
         x=group_col,
         y="Count",
         text="Count",
-        title=title
+        title=title,
     )
 
     fig.update_traces(
         textposition="outside",
         marker_color="#457B9D",
-        width=0.55
+        width=0.55,
     )
 
     fig.update_layout(
@@ -205,7 +324,7 @@ def show_count_bar(df, group_col, title, height=420):
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
-        margin=dict(l=30, r=30, t=70, b=80)
+        margin=dict(l=30, r=30, t=70, b=80),
     )
 
     st.plotly_chart(fig, width="stretch")
@@ -213,88 +332,89 @@ def show_count_bar(df, group_col, title, height=420):
     return chart_df
 
 
-def create_age_group(df):
-    df = df.copy()
+def show_box_plot(
+    df: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    title: str,
+    yaxis_title: str,
+) -> None:
+    if x_col not in df.columns or y_col not in df.columns:
+        st.warning(f"Không đủ dữ liệu để hiển thị biểu đồ `{title}`.")
+        return
 
-    df["AgeGroup"] = pd.cut(
-        df["Age"],
-        bins=[0, 25, 35, 45, 55, 100],
-        labels=[
-            "Under 25",
-            "25-34",
-            "35-44",
-            "45-54",
-            "55+"
-        ]
+    fig = px.box(
+        df,
+        x=x_col,
+        y=y_col,
+        title=title,
     )
 
-    return df
-
-
-def create_income_group(df):
-    df = df.copy()
-
-    df["IncomeGroup"] = pd.qcut(
-        df["MonthlyIncome"],
-        q=4,
-        labels=[
-            "Low Income",
-            "Mid-Low Income",
-            "Mid-High Income",
-            "High Income"
-        ],
-        duplicates="drop"
+    fig.update_layout(
+        height=430,
+        xaxis_title=x_col,
+        yaxis_title=yaxis_title,
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
     )
 
-    return df
-
-
-def create_years_company_group(df):
-    df = df.copy()
-
-    df["YearsAtCompanyGroup"] = pd.cut(
-        df["YearsAtCompany"],
-        bins=[-1, 1, 5, 10, 100],
-        labels=[
-            "0-1 years",
-            "2-5 years",
-            "6-10 years",
-            "10+ years"
-        ]
-    )
-
-    return df
+    st.plotly_chart(fig, width="stretch")
 
 
 # =========================
 # SIDEBAR FILTERS
 # =========================
 
-def apply_overview_filters(df):
+def apply_overview_filters(df: pd.DataFrame) -> pd.DataFrame:
+    required_columns = [
+        "Department",
+        "JobRole",
+        "Gender",
+        "OverTime",
+        "Age",
+    ]
+
+    missing_columns = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+
+    if missing_columns:
+        st.sidebar.warning(
+            "Thiếu cột filter: "
+            + ", ".join(missing_columns)
+        )
+        return df
+
     st.sidebar.title("🔎 Filters")
+
+    department_options = sorted(df["Department"].dropna().unique())
+    jobrole_options = sorted(df["JobRole"].dropna().unique())
+    gender_options = sorted(df["Gender"].dropna().unique())
+    overtime_options = sorted(df["OverTime"].dropna().unique())
 
     department_filter = st.sidebar.multiselect(
         "Department",
-        options=sorted(df["Department"].dropna().unique()),
-        default=sorted(df["Department"].dropna().unique())
+        options=department_options,
+        default=department_options,
     )
 
     jobrole_filter = st.sidebar.multiselect(
         "Job Role",
-        options=sorted(df["JobRole"].dropna().unique()),
-        default=sorted(df["JobRole"].dropna().unique())
+        options=jobrole_options,
+        default=jobrole_options,
     )
 
     gender_filter = st.sidebar.multiselect(
         "Gender",
-        options=sorted(df["Gender"].dropna().unique()),
-        default=sorted(df["Gender"].dropna().unique())
+        options=gender_options,
+        default=gender_options,
     )
 
     overtime_filter = st.sidebar.multiselect(
         "OverTime",
-        options=sorted(df["OverTime"].dropna().unique()),
-        default=sorted(df["OverTime"].dropna().unique())
+        options=overtime_options,
+        default=overtime_options,
     )
 
     age_min = int(df["Age"].min())
@@ -304,15 +424,15 @@ def apply_overview_filters(df):
         "Age Range",
         min_value=age_min,
         max_value=age_max,
-        value=(age_min, age_max)
+        value=(age_min, age_max),
     )
 
     filtered_df = df[
-        (df["Department"].isin(department_filter)) &
-        (df["JobRole"].isin(jobrole_filter)) &
-        (df["Gender"].isin(gender_filter)) &
-        (df["OverTime"].isin(overtime_filter)) &
-        (df["Age"].between(age_range[0], age_range[1]))
+        (df["Department"].isin(department_filter))
+        & (df["JobRole"].isin(jobrole_filter))
+        & (df["Gender"].isin(gender_filter))
+        & (df["OverTime"].isin(overtime_filter))
+        & (df["Age"].between(age_range[0], age_range[1]))
     ]
 
     return filtered_df
@@ -322,7 +442,7 @@ def apply_overview_filters(df):
 # KPI CARD
 # =========================
 
-def show_kpi_card(title, value):
+def show_kpi_card(title: str, value: str) -> None:
     st.markdown(
         f"""
         <div class="kpi-card">
@@ -330,43 +450,31 @@ def show_kpi_card(title, value):
             <div class="kpi-value">{value}</div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
+def get_average_value(df: pd.DataFrame, column: str) -> float:
+    if column not in df.columns:
+        return 0.0
+
+    return float(df[column].mean())
+
+
 # =========================
-# PAGE 1 MAIN
+# PAGE SECTIONS
 # =========================
 
-def show_overview(filtered_df):
-    inject_css()
-
-    st.subheader("Overview")
-
-    df = prepare_attrition_flag(filtered_df)
-
+def show_kpi_section(df: pd.DataFrame) -> None:
     total_employees = len(df)
-
-    if total_employees == 0:
-        st.warning("Không có dữ liệu phù hợp với filter hiện tại.")
-        return
-
-    df = create_age_group(df)
-    df = create_income_group(df)
-    df = create_years_company_group(df)
-
     attrition_employees = int(df["AttritionFlag"].sum())
     active_employees = total_employees - attrition_employees
     attrition_rate = attrition_employees / total_employees * 100
 
-    average_age = df["Age"].mean()
-    average_income = df["MonthlyIncome"].mean()
-    average_years_company = df["YearsAtCompany"].mean()
-    performance_rating = df["PerformanceRating"].mean()
-
-    # =========================
-    # KPI CARDS
-    # =========================
+    average_age = get_average_value(df, "Age")
+    average_income = get_average_value(df, "MonthlyIncome")
+    average_years_company = get_average_value(df, "YearsAtCompany")
+    performance_rating = get_average_value(df, "PerformanceRating")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -398,222 +506,179 @@ def show_overview(filtered_df):
     with col8:
         show_kpi_card("Performance Rating", f"{performance_rating:.1f}")
 
-    st.divider()
 
-    # =========================
-    # SMALL PAGES / TABS
-    # =========================
+def show_job_department_tab(df: pd.DataFrame) -> None:
+    st.markdown(
+        """
+        <div class="insight-box">
+        <b>Focus:</b> Phân tích Attrition theo phòng ban và vị trí công việc.
+        Mục này giúp HR xác định nhóm công việc nào có tỷ lệ nghỉ việc cao nhất.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Job & Department",
-        "Work Conditions",
-        "Demographics",
-        "Income & Tenure"
-    ])
+    col1, col2 = st.columns([1, 1])
 
-    # =========================
-    # TAB 1: JOB & DEPARTMENT
-    # =========================
-
-    with tab1:
-        st.markdown(
-            """
-            <div class="insight-box">
-            <b>Focus:</b> Phân tích Attrition theo phòng ban và vị trí công việc.
-            Mục này giúp HR xác định nhóm công việc nào có tỷ lệ nghỉ việc cao nhất.
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-        col1, col2 = st.columns([1, 1])
-
-        with col1:
-            show_attrition_bar(
-                df,
-                "Department",
-                "Attrition Rate by Department"
-            )
-
-        with col2:
-            show_count_bar(
-                df,
-                "Department",
-                "Employee Count by Department"
-            )
-
+    with col1:
         show_attrition_bar(
             df,
-            "JobRole",
-            "Attrition Rate by Job Role",
-            height=500
+            "Department",
+            "Attrition Rate by Department",
         )
 
-    # =========================
-    # TAB 2: WORK CONDITIONS
-    # =========================
-
-    with tab2:
-        st.markdown(
-            """
-            <div class="insight-box">
-            <b>Focus:</b> Phân tích điều kiện làm việc như overtime, business travel,
-            work-life balance và job satisfaction.
-            </div>
-            """,
-            unsafe_allow_html=True
+    with col2:
+        show_count_bar(
+            df,
+            "Department",
+            "Employee Count by Department",
         )
 
-        col1, col2 = st.columns(2)
+    show_attrition_bar(
+        df,
+        "JobRole",
+        "Attrition Rate by Job Role",
+        height=500,
+    )
 
-        with col1:
-            show_attrition_bar(
-                df,
-                "OverTime",
-                "Attrition Rate by OverTime"
-            )
 
-        with col2:
-            show_attrition_bar(
-                df,
-                "BusinessTravel",
-                "Attrition Rate by Business Travel"
-            )
+def show_work_conditions_tab(df: pd.DataFrame) -> None:
+    st.markdown(
+        """
+        <div class="insight-box">
+        <b>Focus:</b> Phân tích điều kiện làm việc như overtime, business travel,
+        work-life balance và job satisfaction.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        col3, col4 = st.columns(2)
+    col1, col2 = st.columns(2)
 
-        with col3:
-            show_attrition_bar(
-                df,
-                "WorkLifeBalance",
-                "Attrition Rate by Work Life Balance"
-            )
-
-        with col4:
-            show_attrition_bar(
-                df,
-                "JobSatisfaction",
-                "Attrition Rate by Job Satisfaction"
-            )
-
-    # =========================
-    # TAB 3: DEMOGRAPHICS
-    # =========================
-
-    with tab3:
-        st.markdown(
-            """
-            <div class="insight-box">
-            <b>Focus:</b> Phân tích Attrition theo nhóm tuổi, giới tính,
-            tình trạng hôn nhân và lĩnh vực học vấn.
-            </div>
-            """,
-            unsafe_allow_html=True
+    with col1:
+        show_attrition_bar(
+            df,
+            "OverTime",
+            "Attrition Rate by OverTime",
         )
 
-        col1, col2 = st.columns(2)
-
-        with col1:
-            show_attrition_bar(
-                df,
-                "AgeGroup",
-                "Attrition Rate by Age Group"
-            )
-
-        with col2:
-            show_attrition_bar(
-                df,
-                "Gender",
-                "Attrition Rate by Gender"
-            )
-
-        col3, col4 = st.columns(2)
-
-        with col3:
-            show_attrition_bar(
-                df,
-                "MaritalStatus",
-                "Attrition Rate by Marital Status"
-            )
-
-        with col4:
-            show_attrition_bar(
-                df,
-                "EducationField",
-                "Attrition Rate by Education Field"
-            )
-
-    # =========================
-    # TAB 4: INCOME & TENURE
-    # =========================
-
-    with tab4:
-        st.markdown(
-            """
-            <div class="insight-box">
-            <b>Focus:</b> Phân tích mối liên hệ giữa thu nhập, thời gian làm việc
-            và khả năng nghỉ việc.
-            </div>
-            """,
-            unsafe_allow_html=True
+    with col2:
+        show_attrition_bar(
+            df,
+            "BusinessTravel",
+            "Attrition Rate by Business Travel",
         )
 
-        col1, col2 = st.columns(2)
+    col3, col4 = st.columns(2)
 
-        with col1:
-            show_attrition_bar(
-                df,
-                "IncomeGroup",
-                "Attrition Rate by Income Group"
-            )
+    with col3:
+        show_attrition_bar(
+            df,
+            "WorkLifeBalance",
+            "Attrition Rate by Work Life Balance",
+        )
 
-        with col2:
-            show_attrition_bar(
-                df,
-                "YearsAtCompanyGroup",
-                "Attrition Rate by Years at Company"
-            )
+    with col4:
+        show_attrition_bar(
+            df,
+            "JobSatisfaction",
+            "Attrition Rate by Job Satisfaction",
+        )
 
-        col3, col4 = st.columns(2)
 
-        with col3:
-            fig_income = px.box(
-                df,
-                x="Attrition",
-                y="MonthlyIncome",
-                title="Monthly Income Distribution by Attrition"
-            )
+def show_demographics_tab(df: pd.DataFrame) -> None:
+    st.markdown(
+        """
+        <div class="insight-box">
+        <b>Focus:</b> Phân tích Attrition theo nhóm tuổi, giới tính,
+        tình trạng hôn nhân và lĩnh vực học vấn.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-            fig_income.update_layout(
-                height=430,
-                xaxis_title="Attrition",
-                yaxis_title="Monthly Income",
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)"
-            )
+    col1, col2 = st.columns(2)
 
-            st.plotly_chart(fig_income, width="stretch")
+    with col1:
+        show_attrition_bar(
+            df,
+            "AgeGroup",
+            "Attrition Rate by Age Group",
+        )
 
-        with col4:
-            fig_years = px.box(
-                df,
-                x="Attrition",
-                y="YearsAtCompany",
-                title="Years at Company Distribution by Attrition"
-            )
+    with col2:
+        show_attrition_bar(
+            df,
+            "Gender",
+            "Attrition Rate by Gender",
+        )
 
-            fig_years.update_layout(
-                height=430,
-                xaxis_title="Attrition",
-                yaxis_title="Years at Company",
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)"
-            )
+    col3, col4 = st.columns(2)
 
-            st.plotly_chart(fig_years, width="stretch")
+    with col3:
+        show_attrition_bar(
+            df,
+            "MaritalStatus",
+            "Attrition Rate by Marital Status",
+        )
 
-    st.divider()
+    with col4:
+        show_attrition_bar(
+            df,
+            "EducationField",
+            "Attrition Rate by Education Field",
+        )
 
+
+def show_income_tenure_tab(df: pd.DataFrame) -> None:
+    st.markdown(
+        """
+        <div class="insight-box">
+        <b>Focus:</b> Phân tích mối liên hệ giữa thu nhập, thời gian làm việc
+        và khả năng nghỉ việc.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        show_attrition_bar(
+            df,
+            "IncomeGroup",
+            "Attrition Rate by Income Group",
+        )
+
+    with col2:
+        show_attrition_bar(
+            df,
+            "YearsAtCompanyGroup",
+            "Attrition Rate by Years at Company",
+        )
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        show_box_plot(
+            df,
+            x_col="Attrition",
+            y_col="MonthlyIncome",
+            title="Monthly Income Distribution by Attrition",
+            yaxis_title="Monthly Income",
+        )
+
+    with col4:
+        show_box_plot(
+            df,
+            x_col="Attrition",
+            y_col="YearsAtCompany",
+            title="Years at Company Distribution by Attrition",
+            yaxis_title="Years at Company",
+        )
+
+
+def show_filtered_data(df: pd.DataFrame) -> None:
     with st.expander("View Filtered Data"):
         preview_columns = [
             "Age",
@@ -623,10 +688,75 @@ def show_overview(filtered_df):
             "MonthlyIncome",
             "YearsAtCompany",
             "OverTime",
-            "Attrition"
+            "Attrition",
         ]
 
+        available_preview_columns = [
+            col for col in preview_columns
+            if col in df.columns
+        ]
+
+        if not available_preview_columns:
+            st.warning("Không có cột phù hợp để hiển thị dữ liệu.")
+            return
+
         st.dataframe(
-            df[preview_columns],
-            width="stretch"
+            df[available_preview_columns],
+            width="stretch",
         )
+
+
+# =========================
+# PAGE 1 MAIN
+# =========================
+
+def show_overview(filtered_df: pd.DataFrame) -> None:
+    inject_css()
+
+    st.subheader("Overview")
+
+    try:
+        df = prepare_attrition_flag(filtered_df)
+    except ValueError as error:
+        st.error("Không thể xử lý dữ liệu Attrition.")
+        st.exception(error)
+        return
+
+    total_employees = len(df)
+
+    if total_employees == 0:
+        st.warning("Không có dữ liệu phù hợp với filter hiện tại.")
+        return
+
+    df = create_age_group(df)
+    df = create_income_group(df)
+    df = create_years_company_group(df)
+
+    show_kpi_section(df)
+
+    st.divider()
+
+    tab1, tab2, tab3, tab4 = st.tabs(
+        [
+            "Job & Department",
+            "Work Conditions",
+            "Demographics",
+            "Income & Tenure",
+        ]
+    )
+
+    with tab1:
+        show_job_department_tab(df)
+
+    with tab2:
+        show_work_conditions_tab(df)
+
+    with tab3:
+        show_demographics_tab(df)
+
+    with tab4:
+        show_income_tenure_tab(df)
+
+    st.divider()
+
+    show_filtered_data(df)
