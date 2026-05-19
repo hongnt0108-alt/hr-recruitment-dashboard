@@ -1,12 +1,13 @@
 import os
-from pathlib import Path
+
 from dotenv import load_dotenv
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+from paths import ENV_PATH
 
-load_dotenv(BASE_DIR / ".env")
+
+load_dotenv(ENV_PATH)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL is None:
+if not DATABASE_URL:
     raise ValueError("DATABASE_URL chưa được khai báo trong file .env")
