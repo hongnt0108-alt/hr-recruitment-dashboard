@@ -1,2 +1,30 @@
-__pycache__/  *.pyc  .env  venv/  .venv/  .ipynb_checkpoints/  *.pkl  *.joblib 
-.env 
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Environment variables
+.env
+
+# Model files
+models/*.pkl
+models/*.joblib
+
+# Data files
+data/raw/*.csv
+data/processed/*.csv
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
