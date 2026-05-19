@@ -1,7 +1,7 @@
 import joblib
 import pandas as pd
 import streamlit as st
-
+from train_model import train_model
 from paths import MODEL_PATH
 
 
@@ -185,26 +185,23 @@ def show_prediction(df):
 
     try:
         model = load_model()
-    except FileNotFoundError as error:
-        st.error("Không tìm thấy model dự đoán.")
-        st.info("Hãy chạy lệnh sau để train model trước:")
-        st.code("python src\\train_model.py", language="bash")
-        st.exception(error)
-        return
-    except ModuleNotFoundError as error:
-        st.error("Model hiện tại không tương thích với môi trường Python/Numpy đang chạy.")
-        st.info(
-            "Hãy xóa model cũ, train lại model bằng đúng môi trường `.venv`, "
-            "rồi chạy lại Streamlit."
-        )
-        st.code(
-            "del models\\attrition_model.pkl\n"
-            "python src\\train_model.py\n"
-            "python -m streamlit run src\\streamlit_app.py",
-            language="bash",
-        )
-        st.exception(error)
-        return
+
+    except FileNotFoundError:
+        st.warning("Chờ chút nha người đẹp...")
+
+        try:
+            train_model()
+            load_model.clear()
+            model = load_model()
+
+        except Exception as error:
+            st.error("Không thể train model tự động.")
+            st.info(
+                "Hãy kiểm tra database đã có bảng `hr_attrition` chưa "
+                "và kiểm tra DATABASE_URL trong Streamlit Secrets."
+            )
+            st.exception(error)
+            return
     except Exception as error:
         st.error("Không thể load model.")
         st.exception(error)
