@@ -23,7 +23,6 @@ hr-attrition-project/
 │       └── .gitkeep
 ├── models/
 │   └── .gitkeep
-├── notebooks/
 ├── src/
 │   ├── clean_data.py
 │   ├── config.py
