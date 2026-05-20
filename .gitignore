@@ -18,6 +18,7 @@ env/
 # Model files
 models/*.pkl
 models/*.joblib
+!models/attrition_model.pkl
 
 # Data files
 data/raw/*.csv

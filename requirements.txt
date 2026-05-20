@@ -1,9 +1,7 @@
-pandas
-numpy
 streamlit
+pandas
 plotly
 sqlalchemy
-python-dotenv
-scikit-learn
-joblib
 psycopg2-binary
+python-dotenv
+openpyxl

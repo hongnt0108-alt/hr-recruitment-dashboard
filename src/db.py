@@ -1,8 +1,15 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.engine import Engine
-
-from config import DATABASE_URL
+from dotenv import load_dotenv
 
 
-def get_engine() -> Engine:
-    return create_engine(DATABASE_URL)
+load_dotenv()
+
+
+def get_engine():
+    database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        raise ValueError("DATABASE_URL chưa được cấu hình trong file .env")
+
+    return create_engine(database_url)

@@ -1,31 +1,44 @@
 import pandas as pd
 
 from db import get_engine
-from paths import PROCESSED_DATA_PATH
+from paths import (
+    CV_PROCESSED_DATA_PATH,
+    COST_PROCESSED_DATA_PATH,
+    ORDER_PROCESSED_DATA_PATH,
+)
 
 
-TABLE_NAME = "hr_attrition"
+TABLES = {
+    "cvs": CV_PROCESSED_DATA_PATH,
+    "costs": COST_PROCESSED_DATA_PATH,
+    "orders": ORDER_PROCESSED_DATA_PATH,
+}
 
 
-def upload_data() -> None:
-    if not PROCESSED_DATA_PATH.exists():
+def upload_file(table_name: str, file_path) -> None:
+    if not file_path.exists():
         raise FileNotFoundError(
-            f"Không tìm thấy file processed data tại: {PROCESSED_DATA_PATH}. "
+            f"Không tìm thấy file processed data tại: {file_path}. "
             "Hãy chạy `python src/clean_data.py` trước."
         )
 
-    df = pd.read_csv(PROCESSED_DATA_PATH)
+    df = pd.read_csv(file_path)
 
     engine = get_engine()
 
     df.to_sql(
-        TABLE_NAME,
+        table_name,
         engine,
         if_exists="replace",
         index=False,
     )
 
-    print(f"Uploaded {len(df)} rows to table `{TABLE_NAME}` successfully.")
+    print(f"Uploaded {len(df)} rows to table `{table_name}` successfully.")
+
+
+def upload_data() -> None:
+    for table_name, file_path in TABLES.items():
+        upload_file(table_name, file_path)
 
 
 def main() -> None:
